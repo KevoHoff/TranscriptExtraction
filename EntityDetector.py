@@ -1,6 +1,9 @@
 import spacy
 from dateutil import parser
 
+"""
+Handles analysis of transcript key-value pairs
+"""
 class EntityDetector():
     nlp = spacy.load('en_core_web_trf')  # NLP Class Variable
 
@@ -19,7 +22,9 @@ class EntityDetector():
             'School': 'NA'
         }
 
-    # Identify if a key-value pair is metadata and (if so) what piece of matadata is it
+    """
+    Identify if a key-value pair is metadata and (if so) what piece of matadata is it
+    """
     def classify(self, k, v):
         local_scores = {}
         local_scores['Name'] = self.__getScore__(k, v, 'Name')
@@ -40,8 +45,8 @@ class EntityDetector():
             'School': {}
         }
         for k, v in mapping.items():
-            # local_max is the classified metadata
-            # score is the awarded points for similarity to local_max
+            # local_max is a string that represents the classified metadata, e.g., 'School'
+            # score is the awarded points for similarity to the classified metadata
             local_max, score = self.classify(k, v)
             if score > 1:
                 scores[local_max] = {
@@ -67,6 +72,9 @@ class EntityDetector():
 
         return self.form
 
+    """
+    Finds the highest score for a given piece of metadata
+    """
     def __getMax__(self, list):
         score = 0
         mX = 'NA'
@@ -76,21 +84,24 @@ class EntityDetector():
                 score = v['Score']
         return mX
 
+    """
+    Finds the first and last name in a list of possible names from the transcript
+    """
     def __getName__(self, names):
-        isFirst = False
-        isLast = False
+        existsFirst = False
+        existsLast = False
         for k, v in names.items():
             k_lower = k.lower()
             if 'first' in k_lower:
-                isFirst = True
+                existsFirst = True
                 first = v['Value']
             elif 'last' in k_lower:
-                isLast = True
+                existsLast = True
                 last = v['Value']
-            if isFirst and isLast:
+            if existsFirst and existsLast:
                 print('break')
                 break
-        if not isFirst or not isLast:
+        if not existsFirst or not existsLast:
             name = self.__getMax__(names)
             if ',' in name:
                 last, remainder = name.split(sep=',')
@@ -106,6 +117,9 @@ class EntityDetector():
                 last = names[-1]
         return first.title(), last.title()
 
+    """
+    Gives a key-value block a score for how well it relates to metadata
+    """
     def __getScore__(self, key, value, name):
         score = 0
         ner = self.translator[name]
@@ -128,6 +142,9 @@ class EntityDetector():
 
         return score
 
+    """
+    Converts a date to the YYYY/MM/DD format
+    """
     def processDate(self, date):
         try:
             dt = parser.parse(date)
