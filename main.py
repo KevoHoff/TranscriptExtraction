@@ -2,9 +2,8 @@ import json
 import boto3
 import urllib.parse
 from dateutil import parser
-# pip install cupy
-# python -m spacy download en_core_web_trf
 import spacy
+# python -m spacy download en_core_web_trf
 import time
 import numpy as np
 from EntityDetector import EntityDetector
@@ -20,31 +19,39 @@ def lambda_handler(event, context):
 
     META = loadData('meta.data')  # Define metadata for classifying words during extraction process
 
-    form = main(bucket, file, META)
+    form = main(bucket, file, META)  # Get the metadata
 
+    # Store the information in proper format for DB
     db_items = {}
     for key in META['kv'].keys():
         db_items.update({key: {'S': form[key]}})
     db_items.update({'Img': {'S': f'{event["Records"][0]["s3"]["bucket"]["arn"]}/{file}'}})
 
-    print(db_items)
+    # Put an item in the database
     data = db.put_item(
         TableName='Test-Table251',
         Item=db_items
     )
     return data
 
+"""
+Start an asychronous job using Textract's API on a transcript located in bucket/file.
+Capable of analyzing for key-value pairs, or detecting raw text
+"""
 def startJob(client, bucket, file, type):
     response = None
-    if type == 'Analyze':
+    if type == 'Analyze':  # Finds key-value pairs
         response = client.start_document_analysis(
             DocumentLocation={'S3Object': {'Bucket': bucket, 'Name': file}},
             FeatureTypes=['FORMS'])
-    elif type == 'Detect':
+    elif type == 'Detect':  # Finds raw text
         response = client.start_document_text_detection(
             DocumentLocation={'S3Object': {'Bucket': bucket, 'Name': file}})
     return response['JobId']
 
+"""
+Checks if the Textract job is completed or not.
+"""
 def isJobComplete(client, jobId, type):
     status = 'IN_PROGRESS'
     while status == 'IN_PROGRESS':
@@ -62,6 +69,10 @@ def isJobComplete(client, jobId, type):
     print(f'Job Status: {status}')
     return isComplete
 
+"""
+When the job is complete, extract the block information.
+We can harness this to extract key-value pairs and raw text (Depending on our job type).
+"""
 def getJobResults(client, jobId, type):
     if isJobComplete(client, jobId, type):
         if type == 'Analyze':
@@ -70,10 +81,12 @@ def getJobResults(client, jobId, type):
             response = client.get_document_text_detection(JobId=jobId)
         return response['Blocks']
 
-# Takes in raw output from textract.analyze_document(...)
-# and sorts through data to return a mapping for all blocks
-# through their respective ID and a mapping for all key blocks
-# through their respective ID
+"""
+Takes in raw output from textract.analyze_document(...)
+and sorts through data to return a mapping for all blocks
+through their respective ID and a mapping for all key blocks
+through their respective ID
+"""
 def extractIds(tokens):
     token_map = {}
     key_ids = []
@@ -87,18 +100,18 @@ def extractIds(tokens):
 
     return token_map, key_ids
 
+"""
+Given a key block, extract its values
+"""
 def getValueIds(token):
     for relation in token['Relationships']:
         if relation['Type'] == 'VALUE':
             value_ids = relation['Ids']
     return value_ids
 
-# Tentative method of extracting the text as I
-# received from Pankaj's example
-#
-# Inputs the a single block and the block mapping
-# and returns the text that either a key or value
-# contains
+"""
+By inputting a block, this function will extract the text that pertains to it.
+"""
 def getText(token, blocks_map):
     words = []
     if 'Relationships' in token:
@@ -113,6 +126,49 @@ def getText(token, blocks_map):
                             words.append('X')
     return ' '.join(words)
 
+"""
+Phase 1. Extract the key-value pairs from a transcript and use it to identify metadata
+"""
+def getKeyValues(tokens, META):
+    score_list = {}
+
+    # Gets the mapping for IDs of blocks to the blocks themselves
+    # token_map, key_ids = extractIds(tokens)
+    #
+    # mappings = getMapping(token_map, key_ids)
+    mappings = {'Course:': 'Nursing', 'Date of Application:': '2/1/95',
+                'Last': 'Fowler', 'First':'Schlonda', 'Middle': 'R',
+                'Nickname': 'Shon', 'Date of Birth': '7/16/75', 'Age': '19',
+                'Place of Birth': 'PlailA', 'Maiden Name': '',
+                'Address': '1322 NARCAGAMIH St', 'City': 'Phila',
+                'State': 'PA', 'Zip Code': '19138', 'Area Code': '215',
+                'Telephone': '549-7301', 'V.A. No.': '', 'Branch of Service': '',
+                'Soc. Security No.': '191-54-3459', 'YES': '', 'NO': '',
+                'Last Employer: (Name)': 'Filenes BASEMENT',
+                'Employed As:': 'SAles clerk', 'Address (Street)': '(City) (Zip) ST DAVIS LAnCAStoR AUE.',
+                'Dates of Employment': '10/93-12/93', 'In Case of Emergency Notify': 'JoAnn Guy',
+                'Relationship:': 'Aunt', 'Address': '7274 OGOnZ AVE,', 'Area Code': '215',
+                'Telephone': '927-7009', 'Yes': 'NOT_SELECTED', 'No': 'NOT_SELECTED',
+                'Explain': '', 'NAME': 'NAncy HANEY', 'ADDRESS': '2015 N, 20thst',
+                'OCCUPATION': 'Teller', 'TELEPHONE': '924-6896', 'NAME': 'JoAnn Guy',
+                'HOW DID YOU HEAR OF ADVANCED CAREER TRAINING?': 'Friend',
+                'PREVIOUS TRAINING OR EXPERIENCE RELATED TO THIS PROGRAM': 'NO',
+                'HOW LONG:': '', 'HAVE YOU APPLIED STUDENT LOAN': 'NO.',
+                'STATE GRANT?': 'NO', 'PELL GRANT?': 'NO',
+                'HAVE YOU PREVIOUSLY RECEIVED FINANCIAL AID FROM A FEDERAL OR STATE AGENCY?': 'NO',
+                'Signature': 'Jahlondic fowler'
+                }
+    ed = EntityDetector(META)
+
+    form = ed.detectEntity(mappings)
+    print(form)
+
+    return form
+
+"""
+Phase 2 extraction. If we cannot extract sufficient information from the Phase 1 extraction of key-value pairs,
+then we will move to extraction using raw text in hopes of finding the remaining information
+"""
 def getRemainder(tokens, nas, nlp):
     global META
     token_map = {}
@@ -162,8 +218,10 @@ def getRemainder(tokens, nas, nlp):
 
     return form_processed
 
-# Inputs the raw output from textract.analyze_document and
-# outputs a json formatted key-value mapping
+"""
+Inputs the raw output from textract.analyze_document() and
+outputs a dictionary formatted key-value mapping of words in the transcript
+"""
 def getMapping(token_map, key_ids):
     mappings = {}
 
@@ -179,81 +237,13 @@ def getMapping(token_map, key_ids):
         mappings.update([(key_text, value_text)])
     return mappings
 
-def getKeyValues(tokens, META):
-    score_list = {}
-
-    # Gets the mapping for IDs of blocks to the blocks themselves
-    # token_map, key_ids = extractIds(tokens)
-    #
-    # mappings = getMapping(token_map, key_ids)
-    mappings = {'Course:': 'Nursing', 'Date of Application:': '2/1/95',
-                'Last': 'Fowler', 'First':'Schlonda', 'Middle': 'R',
-                'Nickname': 'Shon', 'Date of Birth': '7/16/75', 'Age': '19',
-                'Place of Birth': 'PlailA', 'Maiden Name': '',
-                'Address': '1322 NARCAGAMIH St', 'City': 'Phila',
-                'State': 'PA', 'Zip Code': '19138', 'Area Code': '215',
-                'Telephone': '549-7301', 'V.A. No.': '', 'Branch of Service': '',
-                'Soc. Security No.': '191-54-3459', 'YES': '', 'NO': '',
-                'Last Employer: (Name)': 'Filenes BASEMENT',
-                'Employed As:': 'SAles clerk', 'Address (Street)': '(City) (Zip) ST DAVIS LAnCAStoR AUE.',
-                'Dates of Employment': '10/93-12/93', 'In Case of Emergency Notify': 'JoAnn Guy',
-                'Relationship:': 'Aunt', 'Address': '7274 OGOnZ AVE,', 'Area Code': '215',
-                'Telephone': '927-7009', 'Yes': 'NOT_SELECTED', 'No': 'NOT_SELECTED',
-                'Explain': '', 'NAME': 'NAncy HANEY', 'ADDRESS': '2015 N, 20thst',
-                'OCCUPATION': 'Teller', 'TELEPHONE': '924-6896', 'NAME': 'JoAnn Guy',
-                'HOW DID YOU HEAR OF ADVANCED CAREER TRAINING?': 'Friend',
-                'PREVIOUS TRAINING OR EXPERIENCE RELATED TO THIS PROGRAM': 'NO',
-                'HOW LONG:': '', 'HAVE YOU APPLIED STUDENT LOAN': 'NO.',
-                'STATE GRANT?': 'NO', 'PELL GRANT?': 'NO',
-                'HAVE YOU PREVIOUSLY RECEIVED FINANCIAL AID FROM A FEDERAL OR STATE AGENCY?': 'NO',
-                'Signature': 'Jahlondic fowler'
-                }
-    ed = EntityDetector(META)
-
-    form = ed.detectEntity(mappings)
-    print(form)
-
-    return form
-
+"""
+Load in a file
+"""
 def loadData(file):
     with open(file) as fp:
         data = json.load(fp)
     return data
-
-def findStudentInfo(tokens):
-    token_map = {}
-    line_ids = []
-    info_words = ['student', 'info']
-    stu_section = None
-    in_range = []
-
-    for token in tokens:
-        token_id = token['Id']
-        token_map[token_id] = token
-        if token['BlockType'] == 'LINE' and 'Geometry' in token:
-            if all(word in token['Text'] for word in info_words):
-                stu_section = token
-            else:
-                line_ids.append(token_id)
-    if stu_section != None:
-        min, max = getMinMax(stu_section)
-        for line_id in line_ids:
-            line = token_map[line_id]
-            l_min, l_max = getMinMax(line)
-            if (l_max > min and l_max < max) or (l_min < max and l_max > min):
-                in_range.append(line['Text'])
-
-    print(in_range)
-    return in_range
-
-def getMinMax(token):
-    dimensions = token['Geometry']
-    x_array = []
-    for x, y in dimensions['Polygon']:
-        x_array.append(x)
-    max = np.max(x_array)
-    min = np.min(x_array)
-    return min, max
 
 def main(bucket, file, META):
     client = boto3.client('textract',
@@ -266,28 +256,38 @@ def main(bucket, file, META):
     for k in META['kv'].keys():
         form.update({k: 'NA'})
 
-    # identify form objects
+    # Identify form objects
     jobId = startJob(client, bucket, file, 'Analyze')
     key_value = getJobResults(client, jobId, 'Analyze')
 
+    # Extract metadata from key-value blocks
     key_value_dict = getKeyValues(key_value, META)
-
     form.update(key_value_dict)
 
+    # Identify what information is still missing
     # nas = []
     # for k, v in form.items():
-    #     if v == 'NA' and (k == 'School' or k == 'Name'):
-    #         nas.append(k)
+    #     if v == 'NA':
+    #         nas.append(k)  # Append the missing keys
+    #
+    #         # Identify raw text objects
     #         jobId = startJob(client, bucket, file, 'Detect')
     #         raw = getJobResults(client, jobId, 'Detect')
+    #
+    #         # Use the raw text blocks to find remaining metadata
     #         rem_dict = getRemainder(raw['Blocks'], nas, nlp)
     #         form.update(rem_dict)
-
-
-
-    print("========Process Successful========")
+    if 'NA' in form.values():
+        print('Incomplete extraction...')
+    else:
+        print('Complete extraction...')
 
     return form
+
+
+"""
+Simulating event and context event triggers in AWS
+"""
 if __name__ == '__main__':
     event = loadData('event.txt')
     context = None
