@@ -1,0 +1,24 @@
+{
+    "kv": {
+        "Name": {
+            "alias": ["student", "name", "first", "last"],
+            "antialias": ["guardian", "registrar", "parent", "school", "address", "nickname", "maiden"]
+        },
+        "School": {
+            "alias": ["college", "community", "institution", "institute", "academy", "school", "center", "nursing"],
+            "antialias": ["transcript", "address"]
+        },
+        "Grad": {
+            "alias": ["date", "grad", "graduation"],
+            "antialias": ["birth", "dob"]
+        },
+        "DOB": {
+            "alias": ["date", "birth", "dob"],
+            "antialias": ["grad"]
+        }
+    },
+    "raw": {
+
+    }
+
+}
