@@ -56,6 +56,10 @@ Checks if the Textract job is completed or not.
 """
 def isJobComplete(client, jobId, type):
     status = 'IN_PROGRESS'
+    if type == 'Analyze':
+        print('Key-Value Extraction Phase')
+    if type == 'Detect':
+        print('Raw Text Extraction Phase')
     while status == 'IN_PROGRESS':
         time.sleep(2)
         if type == 'Analyze':
@@ -225,15 +229,15 @@ def main(bucket, file, META):
             'School': 'NA',
             'Grad': 'NA'}
 
-    # # Identify form objects
-    # jobId = startJob(client, bucket, file, 'Analyze')
-    # key_value = getJobResults(client, jobId, 'Analyze')
-    #
-    # # Extract metadata from key-value blocks
-    # key_value_dict = getKeyValues(key_value, META)
-    # form.update(key_value_dict)
+    # Identify form objects
+    jobId = startJob(client, bucket, file, 'Analyze')
+    key_value = getJobResults(client, jobId, 'Analyze')
 
-    # print(form)
+    # Extract metadata from key-value blocks
+    key_value_dict = getKeyValues(key_value, META)
+    form.update(key_value_dict)
+
+    print(form)
 
     # Identify what information is still missing
     nas = []
