@@ -9,7 +9,7 @@
             "antialias": ["transcript", "address"]
         },
         "Grad": {
-            "alias": ["date", "grad", "graduation", "complet"],
+            "alias": ["date", "grad", "graduation", "complet", "end"],
             "antialias": ["birth", "dob"]
         },
         "DOB": {
@@ -34,7 +34,7 @@
                       "gibbs", "business", "mansfield",
                       "mccarrie", "monroeville", "mta",
                       "mti", "national", "newport",
-                      "northeast", "oak"],
+                      "northeast", "oak", "palmer"],
             "antialias": ["high"]
         },
         "DOB": {
