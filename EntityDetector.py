@@ -94,31 +94,38 @@ class EntityDetector():
     def __getName__(self, names):
         existsFirst = False
         existsLast = False
-        for k, v in names.items():
-            k_lower = k.lower()
-            if 'first' in k_lower and v != '':
-                existsFirst = True
-                first = v['Value']
-            elif 'last' in k_lower and v != '':
-                existsLast = True
-                last = v['Value']
-            if existsFirst and existsLast:
-                break
-        if not existsFirst or not existsLast:
-            name = self.__getMax__(names)
-            if ',' in name:
-                last, remainder = name.split(sep=',')
-                last = last.strip(' ')
-                if len(remainder.split()) > 1:
-                    first = remainder.split()[0]
+        if len(names) > 0:
+            for k, v in names.items():
+                k_lower = k.lower()
+                if 'first' in k_lower and v != '':
+                    existsFirst = True
+                    first = v['Value']
+                elif 'last' in k_lower and v != '':
+                    existsLast = True
+                    last = v['Value']
+                if existsFirst and existsLast:
+                    break
+            if not existsFirst or not existsLast:
+                name = self.__getMax__(names)
+                if ',' in name:
+                    last, remainder = name.split(sep=',')
+                    last = last.strip(' ')
+                    last = last.title()
+                    if len(remainder.split()) > 1:
+                        first = remainder.split()[0]
+                        first = first.title()
+                    else:
+                        first = remainder
+                        first = first.title()
+                    first = first.strip(' ')
                 else:
-                    first = remainder
-                first = first.strip(' ')
-            else:
-                names = name.split()
-                first = names[0]
-                last = names[-1]
-        return first.title(), last.title()
+                    names = name.split()
+                    first = names[0].title()
+                    last = names[-1].title()
+        else:
+            first = 'NA'
+            last = 'NA'
+        return first, last
 
     """
     Gives a key-value block a score for how well it relates to metadata
