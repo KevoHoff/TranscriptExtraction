@@ -2,8 +2,9 @@ import json
 import boto3
 import urllib.parse
 from dateutil import parser
-import spacy
+# pip install cupy
 # python -m spacy download en_core_web_trf
+import spacy
 import time
 import numpy as np
 from EntityDetector import EntityDetector
@@ -22,17 +23,17 @@ def lambda_handler(event, context):
     form = main(bucket, file, META)  # Get the metadata
 
     # Store the information in proper format for DB
-    db_items = {}
-    for key in META['kv'].keys():
-        db_items.update({key: {'S': form[key]}})
-    db_items.update({'Img': {'S': f'{event["Records"][0]["s3"]["bucket"]["arn"]}/{file}'}})
+    # db_items = {}
+    # for key in META['kv'].keys():
+    #     db_items.update({key: {'S': form[key]}})
+    # db_items.update({'Img': {'S': f'{event["Records"][0]["s3"]["bucket"]["arn"]}/{file}'}})
 
     # Put an item in the database
-    data = db.put_item(
-        TableName='Test-Table251',
-        Item=db_items
-    )
-    return data
+    # data = db.put_item(
+    #     TableName='Test-Table251',
+    #     Item=db_items
+    # )
+    # return data
 
 """
 Start an asychronous job using Textract's API on a transcript located in bucket/file.
@@ -130,93 +131,51 @@ def getText(token, blocks_map):
 Phase 1. Extract the key-value pairs from a transcript and use it to identify metadata
 """
 def getKeyValues(tokens, META):
-    score_list = {}
-
     # Gets the mapping for IDs of blocks to the blocks themselves
-    # token_map, key_ids = extractIds(tokens)
-    #
-    # mappings = getMapping(token_map, key_ids)
-    mappings = {'Course:': 'Nursing', 'Date of Application:': '2/1/95',
-                'Last': 'Fowler', 'First':'Schlonda', 'Middle': 'R',
-                'Nickname': 'Shon', 'Date of Birth': '7/16/75', 'Age': '19',
-                'Place of Birth': 'PlailA', 'Maiden Name': '',
-                'Address': '1322 NARCAGAMIH St', 'City': 'Phila',
-                'State': 'PA', 'Zip Code': '19138', 'Area Code': '215',
-                'Telephone': '549-7301', 'V.A. No.': '', 'Branch of Service': '',
-                'Soc. Security No.': '191-54-3459', 'YES': '', 'NO': '',
-                'Last Employer: (Name)': 'Filenes BASEMENT',
-                'Employed As:': 'SAles clerk', 'Address (Street)': '(City) (Zip) ST DAVIS LAnCAStoR AUE.',
-                'Dates of Employment': '10/93-12/93', 'In Case of Emergency Notify': 'JoAnn Guy',
-                'Relationship:': 'Aunt', 'Address': '7274 OGOnZ AVE,', 'Area Code': '215',
-                'Telephone': '927-7009', 'Yes': 'NOT_SELECTED', 'No': 'NOT_SELECTED',
-                'Explain': '', 'NAME': 'NAncy HANEY', 'ADDRESS': '2015 N, 20thst',
-                'OCCUPATION': 'Teller', 'TELEPHONE': '924-6896', 'NAME': 'JoAnn Guy',
-                'HOW DID YOU HEAR OF ADVANCED CAREER TRAINING?': 'Friend',
-                'PREVIOUS TRAINING OR EXPERIENCE RELATED TO THIS PROGRAM': 'NO',
-                'HOW LONG:': '', 'HAVE YOU APPLIED STUDENT LOAN': 'NO.',
-                'STATE GRANT?': 'NO', 'PELL GRANT?': 'NO',
-                'HAVE YOU PREVIOUSLY RECEIVED FINANCIAL AID FROM A FEDERAL OR STATE AGENCY?': 'NO',
-                'Signature': 'Jahlondic fowler'
-                }
+    token_map, key_ids = extractIds(tokens)
+
+    # Gets key-value mapping
+    mappings = getMapping(token_map, key_ids)
+
+    # Initialize EntityDetector
     ed = EntityDetector(META)
 
+    # Get the metadata
     form = ed.detectEntity(mappings)
-    print(form)
 
     return form
+
+
+def getRawText(tokens):
+    words = {}
+    token_map = {}
+    line_ids = []
+
+    for token in tokens:
+        token_id = token['Id']
+        token_map[token_id] = token
+        if token['BlockType'] == 'LINE':
+            line_ids.append(token['Id'])
+
+    for line_id in line_ids:
+        line = token_map[line_id]
+        text = getText(line, token_map)
+        y = token['Geometry']['BoundingBox']['Top']
+        x = token['Geometry']['BoundingBox']['Left']
+        words[text] = {'x': x, 'y': y}
+
+    return words
+
+def getLocation(token):
+    pass
 
 """
 Phase 2 extraction. If we cannot extract sufficient information from the Phase 1 extraction of key-value pairs,
 then we will move to extraction using raw text in hopes of finding the remaining information
 """
-def getRemainder(tokens, nas, nlp):
-    global META
-    token_map = {}
-    line_ids = []
+def getRemainder(tokens):
+    text = getRawText(tokens)
 
-    trans = {'ORG': 'School',
-             'PERSON': 'Name',
-             'CARDINAL': 'GPA'}
-
-    storage = {'School': [],
-               'GPA': []}
-
-    form_processed = {}
-
-    for token in tokens:
-        token_id = token['Id']
-        token_map[token_id] = token
-
-        if token['BlockType'] == 'LINE':
-            line_ids.append(token_id)
-
-    for line in line_ids:
-        block = token_map[line]
-        text = block['Text']
-        doc = nlp(text)
-
-        labels = ['ORG']
-        if len(doc.ents) == 1:
-            label = doc.ents[0].label_
-            if label in labels:
-                counter = 0
-                for item in META[trans[label]]:
-                    if item in block['Text'].lower():
-                        counter += 1
-                perc_similar = counter / len(META[trans[label]])
-                storage[trans[label]].append([perc_similar, text])
-            for k, v in storage.items():
-                mX_value = ''
-                mX = 0
-                for item in v:
-                    if item[0] > mX:
-                        mX = item[0]
-                        mX_value = item[1]
-                if mX > 0:
-                    if k in nas and label == 'ORG':
-                        form_processed.update({'School': mX_value})
-
-    return form_processed
 
 """
 Inputs the raw output from textract.analyze_document() and
@@ -234,7 +193,9 @@ def getMapping(token_map, key_ids):
             values.append(getText(value, token_map))
         value_text = ' '.join(values)
         key_text = getText(token_map[key_id], token_map)
-        mappings.update([(key_text, value_text)])
+        y = key['Geometry']['BoundingBox']['Top']
+        mappings[key_text] = {'Value': value_text, 'Top': y}
+
     return mappings
 
 """
@@ -252,9 +213,10 @@ def main(bucket, file, META):
                           region_name='us-east-2'
                           )
 
-    form = {}
-    for k in META['kv'].keys():
-        form.update({k: 'NA'})
+    form = {'First': 'NA',
+            'Last': 'NA',
+            'School': 'NA',
+            'Grad': 'NA'}
 
     # Identify form objects
     jobId = startJob(client, bucket, file, 'Analyze')
@@ -265,18 +227,19 @@ def main(bucket, file, META):
     form.update(key_value_dict)
 
     # Identify what information is still missing
-    # nas = []
-    # for k, v in form.items():
-    #     if v == 'NA':
-    #         nas.append(k)  # Append the missing keys
-    #
-    #         # Identify raw text objects
-    #         jobId = startJob(client, bucket, file, 'Detect')
-    #         raw = getJobResults(client, jobId, 'Detect')
-    #
-    #         # Use the raw text blocks to find remaining metadata
-    #         rem_dict = getRemainder(raw['Blocks'], nas, nlp)
-    #         form.update(rem_dict)
+    nas = []
+    for k, v in form.items():
+        if v == 'NA':
+            nas.append(k)  # Append the missing keys
+
+            # Identify raw text objects
+    jobId = startJob(client, bucket, file, 'Detect')
+    raw = getJobResults(client, jobId, 'Detect')
+
+    # Use the raw text blocks to find remaining metadata
+    rem_dict = getRemainder(raw)
+    form.update(rem_dict)
+
     if 'NA' in form.values():
         print('Incomplete extraction...')
     else:
