@@ -1,5 +1,5 @@
 {
-    "kv": {
+    "key": {
         "Name": {
             "alias": ["student", "name", "first", "last"],
             "antialias": ["guardian", "registrar", "parent", "school", "address", "nickname", "maiden"]
@@ -9,7 +9,7 @@
             "antialias": ["transcript", "address"]
         },
         "Grad": {
-            "alias": ["date", "grad", "graduation"],
+            "alias": ["date", "grad", "graduation", "complet"],
             "antialias": ["birth", "dob"]
         },
         "DOB": {
@@ -17,8 +17,34 @@
             "antialias": ["grad"]
         }
     },
-    "raw": {
-
+    "value": {
+        "Name": {
+            "alias": [],
+            "antialias": []
+        },
+        "School": {
+            "alias": ["advanced", "career", "training",
+                      "act", "institute", "drafting",
+                      "cambria", "rowe", "central",
+                      "charles", "morris", "price",
+                      "craft", "trade", "dubois",
+                      "fpm", "tech", "triangle",
+                      "paralegal", "security",
+                      "ivanhoe", "academy", "russo",
+                      "gibbs", "business", "mansfield",
+                      "mccarrie", "monroeville", "mta",
+                      "mti", "national", "newport",
+                      "northeast", "oak"],
+            "antialias": ["high"]
+        },
+        "DOB": {
+            "alias": [],
+            "antialias": []
+        },
+        "Grad": {
+            "alias": [],
+            "antialias": []
+        }
     }
 
 }
