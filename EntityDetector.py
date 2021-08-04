@@ -26,13 +26,15 @@ class EntityDetector():
     Identify if a key-value pair is metadata and (if so) what piece of matadata is it
     """
     def classify(self, k, v):
+        k = k.title()
+        v = v.title()
         local_scores = {}
         local_scores['Name'] = self.__getScore__(k, v, 'Name')
         local_scores['Grad'] = self.__getScore__(k, v, 'Grad')
         local_scores['School'] = self.__getScore__(k, v, 'School')
+
         local_max = max(local_scores, key=local_scores.get)
         score = local_scores[local_max]
-        print(f'{k}: {v} \n      {local_scores}')
         return local_max, score
 
     """
@@ -47,14 +49,17 @@ class EntityDetector():
         for k, v in mapping.items():
             # local_max is a string that represents the classified metadata, e.g., 'School'
             # score is the awarded points for similarity to the classified metadata
-            local_max, score = self.classify(k, v)
-            if score > 1:
-                scores[local_max] = {
+            local_max, score = self.classify(k, v['Value'])
+            score += (1-v['Top'])
+            print(f'{k}: {v["Value"]}\n {local_max}, {score}')
+            if score > 2:
+                scores[local_max].update({
                     k: {
-                         'Value': v,
+                         'Value': v['Value'],
                          'Score': score
                          }
-                     }
+                })
+        print(scores)
 
         # Get first and last name
         first, last = self.__getName__(scores['Name'])
@@ -99,7 +104,6 @@ class EntityDetector():
                 existsLast = True
                 last = v['Value']
             if existsFirst and existsLast:
-                print('break')
                 break
         if not existsFirst or not existsLast:
             name = self.__getMax__(names)
@@ -124,16 +128,26 @@ class EntityDetector():
         score = 0
         ner = self.translator[name]
 
-        aliases = self.META['kv'][name]['alias']
-        anti_aliases = self.META['kv'][name]['antialias']
+        key_aliases = self.META['key'][name]['alias']
+        key_anti_aliases = self.META['key'][name]['antialias']
+        value_aliases = self.META['value'][name]['alias']
+        value_anti_aliases = self.META['value'][name]['antialias']
 
-        temp = key.lower()
-        for alias in aliases:  # reward if the key text contains aliases
-            if alias in temp:
+        temp_key = key.lower()
+        temp_value = value.lower()
+
+        for key_alias in key_aliases:  # reward if the key text contains aliases
+            if key_alias in temp_key:
                 score += 1
-        for anti_alias in anti_aliases:  # reduce score if the key text contains anti aliases
-            if anti_alias in temp:
-                score -= 1
+        for key_anti_alias in key_anti_aliases:  # reduce score if the key text contains anti aliases
+            if key_anti_alias in temp_key:
+                score -= 10
+        for value_alias in value_aliases:
+            if value_alias in temp_value:
+                score += 2
+        for value_anti_alias in value_anti_aliases:
+            if value_anti_alias in temp_value:
+                score -= 2
 
         doc = self.nlp(value)  # if the NLP recognizes an appropriate metadata, increment score
         for ent in doc.ents:
