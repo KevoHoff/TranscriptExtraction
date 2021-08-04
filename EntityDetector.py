@@ -40,7 +40,7 @@ class EntityDetector():
     """
     Extracts the first name, last name, graduation year, and school name if the information is found in a transcript
     """
-    def detectEntity(self, mapping):
+    def detectEntityKV(self, mapping):
         scores = {
             'Name': {},
             'Grad': {},
@@ -51,7 +51,7 @@ class EntityDetector():
             # score is the awarded points for similarity to the classified metadata
             local_max, score = self.classify(k, v['Value'])
             score += (1-v['Top'])
-            print(f'{k}: {v["Value"]}\n {local_max}, {score}')
+
             if score > 2:
                 scores[local_max].update({
                     k: {
@@ -59,7 +59,6 @@ class EntityDetector():
                          'Score': score
                          }
                 })
-        print(scores)
 
         # Get first and last name
         first, last = self.__getName__(scores['Name'])
@@ -97,10 +96,10 @@ class EntityDetector():
         existsLast = False
         for k, v in names.items():
             k_lower = k.lower()
-            if 'first' in k_lower:
+            if 'first' in k_lower and v != '':
                 existsFirst = True
                 first = v['Value']
-            elif 'last' in k_lower:
+            elif 'last' in k_lower and v != '':
                 existsLast = True
                 last = v['Value']
             if existsFirst and existsLast:
@@ -147,7 +146,7 @@ class EntityDetector():
                 score += 2
         for value_anti_alias in value_anti_aliases:
             if value_anti_alias in temp_value:
-                score -= 2
+                score -= 10
 
         doc = self.nlp(value)  # if the NLP recognizes an appropriate metadata, increment score
         for ent in doc.ents:
