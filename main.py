@@ -8,6 +8,7 @@ import spacy
 import time
 import numpy as np
 from EntityDetector import EntityDetector
+from RawEntDetector import RawEntDetector
 
 def lambda_handler(event, context):
     db = boto3.client('dynamodb',
@@ -141,7 +142,7 @@ def getKeyValues(tokens, META):
     ed = EntityDetector(META)
 
     # Get the metadata
-    form = ed.detectEntity(mappings)
+    form = ed.detectEntityKV(mappings)
 
     return form
 
@@ -173,8 +174,14 @@ def getLocation(token):
 Phase 2 extraction. If we cannot extract sufficient information from the Phase 1 extraction of key-value pairs,
 then we will move to extraction using raw text in hopes of finding the remaining information
 """
-def getRemainder(tokens):
+def getRemainder(tokens, NA, META):
     text = getRawText(tokens)
+
+    red = RawEntDetector(META)  # Instantiating class
+
+    form = red.detectEntity(NA, text)
+
+    return form
 
 
 """
@@ -218,13 +225,15 @@ def main(bucket, file, META):
             'School': 'NA',
             'Grad': 'NA'}
 
-    # Identify form objects
-    jobId = startJob(client, bucket, file, 'Analyze')
-    key_value = getJobResults(client, jobId, 'Analyze')
+    # # Identify form objects
+    # jobId = startJob(client, bucket, file, 'Analyze')
+    # key_value = getJobResults(client, jobId, 'Analyze')
+    #
+    # # Extract metadata from key-value blocks
+    # key_value_dict = getKeyValues(key_value, META)
+    # form.update(key_value_dict)
 
-    # Extract metadata from key-value blocks
-    key_value_dict = getKeyValues(key_value, META)
-    form.update(key_value_dict)
+    # print(form)
 
     # Identify what information is still missing
     nas = []
@@ -232,19 +241,19 @@ def main(bucket, file, META):
         if v == 'NA':
             nas.append(k)  # Append the missing keys
 
-            # Identify raw text objects
-    jobId = startJob(client, bucket, file, 'Detect')
-    raw = getJobResults(client, jobId, 'Detect')
-
-    # Use the raw text blocks to find remaining metadata
-    rem_dict = getRemainder(raw)
-    form.update(rem_dict)
-
     if 'NA' in form.values():
         print('Incomplete extraction...')
+        # Identify raw text objects
+        jobId = startJob(client, bucket, file, 'Detect')
+        raw = getJobResults(client, jobId, 'Detect')
+
+        # Use the raw text blocks to find remaining metadata
+        rem_dict = getRemainder(raw, nas, META)
+        form.update(rem_dict)
     else:
         print('Complete extraction...')
 
+    print(form)
     return form
 
 
