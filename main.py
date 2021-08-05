@@ -165,9 +165,10 @@ def getRawText(tokens):
     for line_id in line_ids:
         line = token_map[line_id]
         text = getText(line, token_map)
-        y = token['Geometry']['BoundingBox']['Top']
-        x = token['Geometry']['BoundingBox']['Left']
-        words[text] = {'x': x, 'y': y}
+        y = line['Geometry']['BoundingBox']['Top']
+        x = line['Geometry']['BoundingBox']['Left']
+        #words[text] = {'x': x, 'y': y}
+        words[text] = y
 
     return words
 
@@ -179,8 +180,23 @@ Phase 2 extraction. If we cannot extract sufficient information from the Phase 1
 then we will move to extraction using raw text in hopes of finding the remaining information
 """
 def getRemainder(tokens, NA, META):
-    text = getRawText(tokens)
+    nlp = spacy.load('en_core_web_trf')
+    ten_percent = []
+    thirty_percent = []
+    fifty_percent = []
 
+    text = getRawText(tokens)
+    for t in text:
+
+        if text[t] <= 0.1:
+            ten_percent.append(t)
+
+            red = RawEntDetector(META)  # Instantiating class
+            form = red.detectEntity(NA, text)
+
+    #ten_percent
+
+    print("raw texts that are on the top 10% area of a page: ",ten_percent)
     red = RawEntDetector(META)  # Instantiating class
 
     form = red.detectEntity(NA, text)
