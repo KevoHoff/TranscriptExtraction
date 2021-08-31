@@ -1,0 +1,22 @@
+{
+    "key": {
+        "Name": {
+            "alias": ["student", "name", "first", "last"],
+            "antialias": ["guardian", "registrar", "parent", "school", "address", "nickname", "maiden", "academy", "institut", "college", "center"]
+        },
+        "Grad": {
+            "alias": ["date", "grad", "graduation", "complet", "end", "to"],
+            "antialias": ["birth", "dob", "start"]
+        }
+    },
+    "value": {
+        "Name": {
+            "alias": [],
+            "antialias": []
+        },
+        "Grad": {
+            "alias": [],
+            "antialias": []
+        }
+    }
+}
