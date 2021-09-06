@@ -1,6 +1,15 @@
 import matplotlib.pyplot as plt
 import json
 import numpy as np
+
+"""
+Plots a histogram based on a sample of confidences from OCR extractions
+
+Parameters
+----------
+conf: (list) a collection of floats each representing the average confidence of OCR
+             extraction on a document
+"""
 def plotConf(conf):
     fig = plt.figure(figsize=(10, 5))
     plt.style.use('seaborn-whitegrid')
@@ -11,7 +20,16 @@ def plotConf(conf):
     plt.title('Histogram of 500 Transcript Confidence Readings')
     plt.show()
 
+"""
+Plots out a historgram of confidences and writes a file of all transcripts' extraction
+results as well as some distribution details on the confidences.
 
+Parameters
+----------
+forms: (list) a collection of dictionaries where the key is a string of the transcript
+              PDF name and is mapped to a dictionary. This dictionary maps the metadata
+              to what the algorithm was able to select for each
+"""
 def report(forms):
     conf = []
     for form in forms:
