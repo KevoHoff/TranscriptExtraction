@@ -19,14 +19,16 @@ def lambda_handler(bucket, table):
     bucket = bucket
 
     objects = s3.list_objects(Bucket=bucket)['Contents']
-
+    
     for object in objects:
         file = object['Key']
-
+        
+        # key-value pair OCR extraction AWS job id
         kv_job = textract.start_document_analysis(
             DocumentLocation={'S3Object': {'Bucket': bucket, 'Name': file}},
             FeatureTypes=['FORMS'])['JobId']
-
+        
+        # raw text OCR extraction AWS job id
         raw_job = textract.start_document_text_detection(
             DocumentLocation={'S3Object': {'Bucket': bucket, 'Name': file}})['JobId']
 
