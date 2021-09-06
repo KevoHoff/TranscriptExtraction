@@ -22,6 +22,21 @@ class EntityDetector():
 
     """
     Identify if a key-value pair is metadata and (if so) what piece of matadata is it
+    
+    Parameters
+    ----------
+    k: (string) the text extracted from a key in a key-value pair from a given document
+    v: (string) the text extracted from a value in a key-value pair from a given document
+    
+    Returns
+    -------
+    local_max: (string) represents the type of metadata that this key-value pair
+                        most likely belongs to (e.g., 'First' or 'Last' or 'Grad')
+                        
+    score: (float) a rating of how confident we are this key-value pair is the one
+                   we are looking for. Calculated based on how many times an alias 
+                   appeared in the key or value and its positioning from the top of
+                   the page--rewarding a pair that is closer to the top
     """
     def classify(self, k, v):
         k = k.title()
@@ -35,13 +50,27 @@ class EntityDetector():
 
     """
     Extracts the first name, last name, and graduation year if the information is found in a transcript
+    
+    Parameters
+    ----------
+    mappings: (dictionary) key is the field name found in a document, and is mapped to another
+                           dictionary with two items. This dictionary contains 'Value' which
+                           maps to the value text found in the field and 'Top' which represents
+                           the relative percentage distance this key-value pair was from the top
+                           of the document
+    
+    Returns
+    -------
+    form: (dictionary) a mapping of metadata names to extracted information. In other words, the
+                   desired metadata are the keys and the selected information from fields in
+                   a transcript are the values (e.g. what the first name is)
     """
-    def detectEntityKV(self, mapping):
+    def detectEntityKV(self, mappings):
         scores = {
             'Name': {},
             'Grad': {},
         }
-        for k, v in mapping.items():
+        for k, v in mappings.items():
             # local_max is a string that represents the classified metadata, e.g., 'First'
             # score is the awarded points for similarity to the classified metadata
             if len(v['Value']) > 0:
@@ -70,6 +99,17 @@ class EntityDetector():
 
     """
     Finds the highest score for a given piece of metadata
+    
+    Parameters
+    ----------
+    list: (dictionary) key is the field name found in a document, and is mapped to another
+                       dictionary with two items. This dictionary contains 'Value' which
+                       maps to the value text found in the field and 'Score' which represents
+                       how confident we are this key-value pair is the one we are looking for
+    
+    Returns
+    -------
+    mX: (string) just the value text of a key-value pair that has the highest score
     """
     def __getMax__(self, list):
         score = 0
@@ -81,12 +121,31 @@ class EntityDetector():
         return mX
 
     """
-    Finds the first and last name in a list of possible names from the transcript
+    Finds the first and last name in a list of possible names from the transcript. Tries
+    to take in various formats (e.g., First Last; Last, First; First Mi Last; Last, First Mi)
+    
+    Parameters
+    ----------
+    names: (dictionary) key is the field name found in a document, and is mapped to another
+                        dictionary with two items. This dictionary contains 'Value' which
+                        maps to the value text found in the field and 'Score' which represents
+                        how confident we are this key-value pair is the one we are looking for
+    
+    Returns
+    -------
+    first: (string) the text representation of a person's first name in the document
+    
+    last: (string) the text representation of a person's first name in the document
+    
+    Priority Work
+    -------------
+    This algorithm needs improvements as it gets confused when there is a middle name.
+    Likely can be optimized with more concise code
     """
     def __getName__(self, names):
         existsFirst = False
         existsLast = False
-        if len(names) > 0:
+        if len(names) > 0:  # If there is a name found in the document
             for k, v in names.items():
                 k_lower = k.lower()
                 if 'first' in k_lower and v != '':
@@ -115,13 +174,32 @@ class EntityDetector():
                     names = name.split()
                     first = names[0].title()
                     last = names[-1].title()
-        else:
+        else:  # If no name, return NAs
             first = 'NA'
             last = 'NA'
         return first, last
 
     """
     Gives a key-value block a score for how well it relates to metadata
+    
+    Parameters
+    ----------
+    key: (string) the text representation of the key identified in a key-value
+                  pair in a document
+    
+    value: (string) the text representation of the value identified in a key-value
+                    pair in a document
+                    
+    name: (string) tells the natural language processor what kind of information we
+                   should expect to see (e.g., 'First', 'Last', Grad). If 'First'
+                   or 'Last', should be a 'PERSON'. If 'Grad', should be a 'DATE'
+    
+    Returns
+    -------
+    score: (float) a rating of how confident we are this key-value pair is the one
+                   we are looking for. Calculated based on how many times an alias 
+                   appeared in the key or value and its positioning from the top of
+                   the page--rewarding a pair that is closer to the top
     """
     def __getScore__(self, key, value, name):
         score = 0
@@ -158,11 +236,20 @@ class EntityDetector():
 
     """
     Converts a date to the YYYY/MM/DD format
+    
+    Parameters
+    ----------
+    date: (string) represents some way of spelling a date. Can be number denotation, month name denotation, etc.
+                   (e.g., '4/6/2001', 'August 7, 2012')
+    
+    Returns
+    -------
+    dt_proc: (string) a string of the year of the graduation date in a standardized format of just the year
     """
     def processDate(self, date):
         try:
             dt = parser.parse(date)
-            dt_proc = dt.strftime("%Y/%m/%d")
+            dt_proc = dt.strftime("%Y")  # If this doesn't work, then dt.strftime("%Y/%m/%d")
         except ValueError:
             print('Warning. \'Date\' key does not map to a Date value.')
             dt_proc = 'NA'
