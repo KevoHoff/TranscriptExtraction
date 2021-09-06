@@ -7,7 +7,21 @@ import time
 from EntityDetector import EntityDetector
 from RawEntDetector import RawEntDetector
 import ProgressReport as pr
+"""
+Retrieves key-value pair and raw text OCR extraction from JSON files in an S3 bucket.
 
+Parameters
+----------
+bucket: (string) the string name of the S3 bucket on an AWS account
+folder: (string) the folder name that is named after a given transcript PDF. Ends with .pdf
+
+Returns
+-------
+kv_json: (dictionary) unaltered output from Textract's get_document_analysis(...) API
+                      and contains OCR extraction information on key-value pairs
+raw_json: (dictionary) unaltered output from Textract's get_document_text_detection(...)
+                       API and contains OCR extraction information on text blocks
+"""
 def getFileContent(bucket, folder):
     s3res = boto3.resource('s3', region_name='us-east-2')
     kvObj = s3res.Object(bucket, f'{folder}/kv.json')
@@ -23,11 +37,17 @@ def getFileContent(bucket, folder):
 
     return kv_json, raw_json
 
-def lambda_handler(event, context):
+"""
+Takes OCR results from the key-value pairs and raw text of a document, extracts the
+first name, last name, graduation year and stored these three pieces of metadata--
+alongiside the ARN--into DynamoDB on AWS.
+
+Priotity work to be done: algorithm to get school name from folder naming conventions 
+and full ARN (instead of the current transcript file name).
+"""
+def lambda_handler(bucket):
     db = boto3.client('dynamodb', region_name='us-east-2')  # Initialize AWS database client
     s3 = boto3.client('s3', region_name='us-east-2')
-
-    bucket = 'results251'
 
     META = loadData('meta.data')
 
@@ -67,10 +87,28 @@ def lambda_handler(event, context):
 
 
 """
-Takes in raw output from textract.analyze_document(...)
+Takes in raw output from get_document_analysis(...)
 and sorts through data to return a mapping for all blocks
-through their respective ID and a mapping for all key blocks
-through their respective ID
+through their respective ID and a list for all key blocks
+through their respective ID, and the average confidence of
+OCR extraction
+
+Parameters
+----------
+tokens: (list) each element is a dictionary that represents a single block of information
+               identified from the OCR extraction ('Id', 'EntityType', 'BlockType', 'Text',
+               'Relationships', 'Confidence', etc.)
+
+Returns
+-------
+token_map: (dictionary) a mapping such that keys are the Id's of blocks found from OCR and
+                        the values are the same dictionaries stores in the list tokens
+                        
+key_ids: (list) contains all blocks that are identified such that 'BlockType' == 'KEY_VALUE_SET'
+         and 'EntityType' == 'KEY'. Allows to find value and text information from this
+         parent block
+                         
+confidence: (float) represents the average confidence of OCR readings from every block found
 """
 def extractIds(tokens):
     token_map = {}
@@ -87,7 +125,18 @@ def extractIds(tokens):
     return token_map, key_ids, confidence
 
 """
-Given a key block, extract its values
+Finds all value block ids for a given key block id
+
+Parameters
+----------
+token: (dictionary) represents a single block of information identified from the OCR 
+                    extraction ('Id', 'EntityType', 'BlockType', 'Text', 'Relationships',
+                    'Confidence', etc.)
+
+Returns
+-------                   
+value_ids: (list) contains all block ids that are identified such that 'BlockType' == 'KEY_VALUE_SET'
+                  and 'EntityType' == 'VALUE' specifically as a descendent from a key block
 """
 def getValueIds(token):
     for relation in token['Relationships']:
@@ -97,24 +146,55 @@ def getValueIds(token):
 
 """
 By inputting a block, this function will extract the text that pertains to it.
+
+Parameters
+----------
+token: (dictionary) represents a single block of information identified from the OCR 
+                    extraction ('Id', 'EntityType', 'BlockType', 'Text', 'Relationships',
+                    'Confidence', etc.)
+
+token_map: (dictionary) a mapping such that keys are the Id's of blocks found from OCR and
+                        the values are the same dictionaries stores in the list tokens
+                        
+Returns
+-------                   
+phrase: (string) the text extracted from either a key or value block
 """
-def getText(token, blocks_map):
+def getText(token, token_map):
     words = []
     if 'Relationships' in token:
         for relationship in token['Relationships']:
             if relationship['Type'] == 'CHILD':
                 for child_id in relationship['Ids']:
-                    if child_id in blocks_map.keys():
-                        word = blocks_map[child_id]
+                    if child_id in token_map.keys():
+                        word = token_map[child_id]
                         if word['BlockType'] == 'WORD':
                             words.append(word['Text'])
                         elif word['BlockType'] == 'SELECTION_ELEMENT':
                             if word['SelectionStatus'] == 'SELECTED':
                                 words.append('X')
-    return ' '.join(words)
+    phrase = ' '.join(words)
+    return phrase
 
 """
 Phase 1. Extract the key-value pairs from a transcript and use it to identify metadata
+
+Parameters
+----------
+tokens: (list) each element is a dictionary that represents a single block of information
+               identified from the OCR extraction ('Id', 'EntityType', 'BlockType', 'Text',
+               'Relationships', 'Confidence', etc.)
+               
+META: (dictionary) a mapping of different of key words (aliases) and words that indicate wrong 
+                   selection (antialiases) to our desired metadata (first, last, and graduation 
+                   date). Currently there only exists aliases and antaliases for key blocks of
+                   the metadata
+
+Returns
+-------
+form: (dictionary) a mapping of metadata names to extracted information. In other words, the
+                   desired metadata are the keys and the selected information from fields in
+                   a transcript are the values (e.g. what the first name is)
 """
 def getKeyValues(tokens, META):
     # Gets the mapping for IDs of blocks to the blocks themselves
@@ -135,7 +215,23 @@ def getKeyValues(tokens, META):
 
     return form
 
+"""
+Extracts all the lines of text found in a transcript document.
 
+Parameters
+----------
+tokens: (list) each element is a dictionary that represents a single block of information
+               identified from the OCR extraction ('Id', 'EntityType', 'BlockType', 'Text',
+               'Relationships', 'Confidence', etc.)
+                        
+Returns
+-------                   
+words: (dictionary) the keys are a single line of text and it mapped to the y position of
+                    the text found on the page. The position is represented in a percentage
+                    from the top of the page. 0.1 is 10% from the top of the page
+                    
+confidence: (float) represents the average confidence of OCR readings from every block found
+"""
 def getRawText(tokens):
     words = {}
     token_map = {}
@@ -168,6 +264,26 @@ def getLocation(token):
 """
 Phase 2 extraction. If we cannot extract sufficient information from the Phase 1 extraction of key-value pairs,
 then we will move to extraction using raw text in hopes of finding the remaining information
+
+Parameters
+----------
+tokens: (list) each element is a dictionary that represents a single block of information
+               identified from the OCR extraction ('Id', 'EntityType', 'BlockType', 'Text',
+               'Relationships', 'Confidence', etc.)
+               
+NA: (list) a collection of strings, where strings are the names of any piece of missing metadata
+           (e.g., 'GRAD')
+               
+META: (dictionary) a mapping of different of key words (aliases) and words that indicate wrong 
+                   selection (antialiases) to our desired metadata (first, last, and graduation 
+                   date). Currently there only exists aliases and antaliases for key blocks of
+                   the metadata
+
+Returns
+-------
+form: (dictionary) a mapping of metadata names to extracted information. In other words, the
+                   desired metadata are the keys and the selected information from fields in
+                   a transcript are the values (e.g. what the first name is)
 """
 def getRemainder(tokens, NA, META):
     nlp = spacy.load('en_core_web_trf')
@@ -190,8 +306,24 @@ def getRemainder(tokens, NA, META):
 
 
 """
-Inputs the raw output from textract.analyze_document() and
-outputs a dictionary formatted key-value mapping of words in the transcript
+Gets the key-value pair mappings and location from a structured token_map
+
+Parameters
+----------
+token_map: (dictionary) a mapping such that keys are the Id's of blocks found from OCR and
+                        the values are the same dictionaries stores in the list tokens
+                        
+key_ids: (list) contains all blocks that are identified such that 'BlockType' == 'KEY_VALUE_SET'
+         and 'EntityType' == 'KEY'. Allows to find value and text information from this
+         parent block
+
+Returns
+-------
+mappings: (dictionary) key is the field name found in a document, and is mapped to another
+                       dictionary with two items. This dictionary contains 'Value' which
+                       maps to the value text found in the field and 'Top' which represents
+                       the relative percentage distance this key-value pair was from the top
+                       of the document
 """
 def getMapping(token_map, key_ids):
     mappings = {}
@@ -212,13 +344,43 @@ def getMapping(token_map, key_ids):
     return mappings
 
 """
-Load in a file
+Load in a file in JSON format to a dictionary
+
+Parameters
+----------
+file: (string) file destination of JSON information
+
+Returns
+-------
+data: (dictionary) any mapping output from a JSON file
 """
 def loadData(file):
     with open(file) as fp:
         data = json.load(fp)
     return data
 
+"""
+Extracts key metadata information from Textract key-value pair and raw text OCR extraction
+
+Parameters
+----------
+kv_json: (dictionary) unaltered output from Textract's get_document_analysis(...) API
+                      and contains OCR extraction information on key-value pairs
+                      
+raw_json: (dictionary) unaltered output from Textract's get_document_text_detection(...)
+                       API and contains OCR extraction information on text blocks
+                       
+META: (dictionary) a mapping of different of key words (aliases) and words that indicate wrong 
+                   selection (antialiases) to our desired metadata (first, last, and graduation 
+                   date). Currently there only exists aliases and antaliases for key blocks of
+                   the metadata
+
+Returns
+-------
+form: (dictionary) a mapping of metadata names to extracted information. In other words, the
+                   desired metadata are the keys and the selected information from fields in
+                   a transcript are the values (e.g. what the first name is)
+"""
 def main(kv_json, raw_json, META):
     form = {'First': 'NA',
             'Last': 'NA',
@@ -248,11 +410,8 @@ def main(kv_json, raw_json, META):
     print(form)
     return form
 
-
 """
 Simulating event and context event triggers in AWS
 """
 if __name__ == '__main__':
-    event = loadData('event.txt')
-    context = None
-    response = lambda_handler(event, context)
+    response = lambda_handler(bucket='Bucket')
